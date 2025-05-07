@@ -25,6 +25,7 @@ class _UsherRegisterPageState extends State<UsherRegisterPage> {
   bool _obscureConfirm = true;
   bool _isLoading = false;
   final _apiService = ApiService();
+  final ValueNotifier<String?> _errorMessage = ValueNotifier<String?>(null);
 
   // Gender values must match backend enum exactly
   final List<String> _genders = ['male', 'female', 'other'];
@@ -43,6 +44,46 @@ class _UsherRegisterPageState extends State<UsherRegisterPage> {
       ),
       body: Stack(
         children: [
+          // Error banner at the bottom - will be controlled by the error handling code
+          ValueListenableBuilder<String?>(
+            valueListenable: _errorMessage,
+            builder: (context, errorMsg, child) {
+              if (errorMsg == null || errorMsg.isEmpty) {
+                return const SizedBox.shrink();
+              }
+
+              return Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  color: Colors.red,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 20,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          errorMsg,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => _errorMessage.value = null,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -305,130 +346,226 @@ class _UsherRegisterPageState extends State<UsherRegisterPage> {
                                 borderRadius: BorderRadius.circular(30),
                               ),
                             ),
-                            onPressed: _isLoading
-                                ? null
-                                : () async {
-                                    try {
-                                      if (!_formKey.currentState!.validate()) {
-                                        return;
-                                      }
+                            onPressed:
+                                _isLoading
+                                    ? null
+                                    : () async {
+                                      try {
+                                        if (!_formKey.currentState!
+                                            .validate()) {
+                                          return;
+                                        }
 
-                                      if (_selectedGender == null) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Please select your gender'),
-                                            backgroundColor: Colors.red,
-                                            duration: Duration(seconds: 3),
-                                          ),
+                                        if (_selectedGender == null) {
+                                          debugPrint(
+                                            'ERROR: Gender selection is missing',
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Please select your gender',
+                                              ),
+                                              backgroundColor: Colors.red,
+                                              duration: Duration(seconds: 3),
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        if (_passwordController.text !=
+                                            _confirmPasswordController.text) {
+                                          debugPrint(
+                                            'ERROR: Passwords do not match',
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Passwords do not match',
+                                              ),
+                                              backgroundColor: Colors.red,
+                                              duration: Duration(seconds: 3),
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        setState(() => _isLoading = true);
+
+                                        // Log the data being sent to the API
+                                        final data = {
+                                          'firstName':
+                                              _firstNameController.text.trim(),
+                                          'lastName':
+                                              _lastNameController.text.trim(),
+                                          'email': _emailController.text.trim(),
+                                          'password': _passwordController.text,
+                                          'phone': _phoneController.text.trim(),
+                                          'birthdate':
+                                              _birthDateController.text,
+                                          'gender': _selectedGender,
+                                        };
+
+                                        debugPrint(
+                                          'SENDING USHER REGISTRATION DATA: $data',
                                         );
-                                        return;
-                                      }
 
-                                      if (_passwordController.text != _confirmPasswordController.text) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Passwords do not match'),
-                                            backgroundColor: Colors.red,
-                                            duration: Duration(seconds: 3),
-                                          ),
+                                        final response = await _apiService
+                                            .registerUsher(data);
+
+                                        if (!mounted) return;
+
+                                        if (!response.success) {
+                                          debugPrint(
+                                            'USHER REGISTRATION ERROR: ${response.message}',
+                                          );
+                                          debugPrint(
+                                            'ERROR CODE: ${response.errorCode}',
+                                          );
+
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(response.message),
+                                              backgroundColor: Colors.red,
+                                              duration: const Duration(
+                                                seconds: 3,
+                                              ),
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        // Show success message
+                                        debugPrint(
+                                          'USHER REGISTRATION SUCCESS: ${response.message}',
                                         );
-                                        return;
-                                      }
 
-                                      setState(() => _isLoading = true);
-
-                                      final response = await _apiService.registerUsher({
-                                        'firstName': _firstNameController.text.trim(),
-                                        'lastName': _lastNameController.text.trim(),
-                                        'email': _emailController.text.trim(),
-                                        'password': _passwordController.text,
-                                        'phone': _phoneController.text.trim(),
-                                        'birthdate': _birthDateController.text,
-                                        'gender': _selectedGender,
-                                      });
-
-                                      if (!mounted) return;
-
-                                      if (!response.success) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(response.message),
-                                            backgroundColor: Colors.red,
-                                            duration: const Duration(seconds: 3),
+                                            backgroundColor: Colors.green,
+                                            duration: const Duration(
+                                              seconds: 3,
+                                            ),
                                           ),
                                         );
-                                        return;
+
+                                        // Wait for snackbar to be visible
+                                        await Future.delayed(
+                                          const Duration(milliseconds: 500),
+                                        );
+
+                                        if (!mounted) return;
+
+                                        // Navigate to verification page instead of login
+                                        debugPrint(
+                                          'Navigating to verification page with email: ${_emailController.text.trim()}',
+                                        );
+                                        Navigator.of(context).pushNamed(
+                                          '/verification',
+                                          arguments:
+                                              _emailController.text.trim(),
+                                        );
+                                      } on DioException catch (e) {
+                                        if (!mounted) return;
+
+                                        String errorMessage;
+                                        if (e.type ==
+                                                DioExceptionType
+                                                    .connectionTimeout ||
+                                            e.type ==
+                                                DioExceptionType
+                                                    .receiveTimeout) {
+                                          errorMessage =
+                                              'Connection timeout. Please check your internet connection.';
+                                        } else {
+                                          errorMessage =
+                                              e.response?.data?['message'] ??
+                                              'Registration failed';
+                                        }
+
+                                        debugPrint('DIO ERROR: $errorMessage');
+                                        debugPrint('Error Type: ${e.type}');
+                                        debugPrint(
+                                          'Error Response: ${e.response?.data}',
+                                        );
+
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(errorMessage),
+                                            backgroundColor: Colors.red,
+                                            duration: const Duration(
+                                              seconds: 3,
+                                            ),
+                                          ),
+                                        );
+                                      } catch (e, stackTrace) {
+                                        debugPrint(
+                                          'ERROR during usher registration: $e',
+                                        );
+                                        debugPrint('Stack trace: $stackTrace');
+
+                                        if (!mounted) return;
+
+                                        // Set error message for the persistent banner
+                                        _errorMessage.value =
+                                            'Registration failed: ${e.toString()}';
+
+                                        // Also show a snackbar for immediate feedback
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                              'Registration failed. See details at bottom of screen.',
+                                            ),
+                                            backgroundColor: Colors.red,
+                                            duration: const Duration(
+                                              seconds: 3,
+                                            ),
+                                            action: SnackBarAction(
+                                              label: 'Dismiss',
+                                              textColor: Colors.white,
+                                              onPressed: () {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).hideCurrentSnackBar();
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() => _isLoading = false);
+                                        }
                                       }
-
-                                      // Show success message first
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(response.message),
-                                          backgroundColor: Colors.green,
-                                          duration: const Duration(seconds: 3),
-                                        ),
-                                      );
-
-                                      // Wait for snackbar to be visible
-                                      await Future.delayed(const Duration(milliseconds: 500));
-
-                                      if (!mounted) return;
-
-                                      // Navigate to login page
-                                      Navigator.of(context).pushReplacementNamed('/login');
-                                    } on DioException catch (e) {
-                                      if (!mounted) return;
-
-                                      String errorMessage;
-                                      if (e.type == DioExceptionType.connectionTimeout || 
-                                          e.type == DioExceptionType.receiveTimeout) {
-                                        errorMessage = 'Connection timeout. Please check your internet connection.';
-                                      } else {
-                                        errorMessage = e.response?.data?['message'] ?? 'Registration failed';
-                                      }
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(errorMessage),
-                                          backgroundColor: Colors.red,
-                                          duration: const Duration(seconds: 3),
-                                        ),
-                                      );
-                                    } catch (e, stackTrace) {
-                                      print('Error during usher registration: $e');
-                                      print('Stack trace: $stackTrace');
-
-                                      if (!mounted) return;
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('An unexpected error occurred during registration'),
-                                          backgroundColor: Colors.red,
-                                          duration: Duration(seconds: 3),
-                                        ),
-                                      );
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _isLoading = false);
-                                      }
-                                    }
-                                  },
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
+                                    },
+                            child:
+                                _isLoading
+                                    ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Text(
+                                      "Create Account",
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                  )
-                                : const Text(
-                                    "Create Account",
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
                           ),
                         ),
                         const SizedBox(height: 10),
